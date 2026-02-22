@@ -34,6 +34,7 @@ Install the package in "editable" mode so any changes you make to the source cod
 
 ## 📂 Repository Structure
 
+```text
 cooltrack/
 ├── pyproject.toml         # Package configuration for pip
 ├── .gitignore             # Ignores large data files (like the HADES grid)
@@ -47,6 +48,7 @@ cooltrack/
         ├── data_loader.py # PyArrow-backed Parquet loaders
         ├── models.py      # XGBoost training and prediction wrappers
         └── integrator.py  # ODE solvers for age and thermal tracks
+```
 
 *(Note: The `HADES` grid data is intentionally omitted from version control due to file size limits. Place your `.parquet` data files in a local directory ignored by Git, such as `../data/`)*
 
@@ -56,6 +58,7 @@ cooltrack/
 
 Here is a minimal example of how to load the grid, train the surrogate models, and integrate a cooling track for a 1 Jupiter-mass planet.
 
+```python
 import numpy as np
 from cooltrack.constants import INDEPENDENT_DIMS
 from cooltrack.data_loader import load_and_clean_grid_pandas
@@ -84,10 +87,4 @@ s_cold_end = df['S_physical'].min()
 ages_yr, entropies = integrator.calculate_track(planet_row, s_hot_start, s_cold_end)
 
 print(f"Integration complete! Final age: {ages_yr[-1]:.2e} years")
-
----
-
-## 🗺️ Roadmap / Next Steps
-- [ ] Migrate the Initial Entropy (S_0) interpolators (S_hot, S_cold) to dynamically set ODE boundaries.
-- [ ] Add photometric interpolators (MIRI, NIRISS) evaluated along the cooling track.
-- [ ] Implement hyperparameter tuning scripts for the XGBoost models.
+```
