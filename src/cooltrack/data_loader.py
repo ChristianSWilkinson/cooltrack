@@ -12,8 +12,11 @@ def load_and_clean_grid_pandas(filepath: str) -> pd.DataFrame:
     """
     logging.info(f"Loading filtered parquet file: {filepath}...")
     
-    # 1. Select only necessary columns
-    needed_columns = INDEPENDENT_DIMS + ['mass', 'Req', 'T_int', 'S_physical', 'dsdt']
+    # 1. Select EXACTLY the raw columns present in the Parquet file
+    raw_columns = [
+        'mass', 'Req', 'T_int', 'T_irr', 'Met', 'core', 'f_sed', 'kzz', 
+        'S_physical', 'dsdt'
+    ]
     
     # 2. Apply Predicate Pushdown filters 
     mass_threshold_kg = 20 * M_J
@@ -27,16 +30,17 @@ def load_and_clean_grid_pandas(filepath: str) -> pd.DataFrame:
     df = pd.read_parquet(
         filepath, 
         engine='pyarrow',
-        columns=needed_columns,
+        columns=raw_columns,
         filters=filters
     )
     
-    # 4. Process the remaining data in memory
+    # 4. Process the data in memory to create our ML features
     df['mass_Mj'] = df['mass'] / M_J
     df['Req_Rj'] = df['Req'] / R_J
     df['abs_log_dsdt'] = np.log10(np.abs(df['dsdt']))
     
-    # 5. Drop rows where critical variables are NaN
+    # 5. Drop rows where critical ML variables are NaN
+    # Now we can safely use INDEPENDENT_DIMS because mass_Mj exists!
     critical_cols = INDEPENDENT_DIMS + ['S_physical', 'abs_log_dsdt']
     df = df.dropna(subset=critical_cols).reset_index(drop=True)
     
