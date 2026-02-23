@@ -3,15 +3,24 @@
 # ==========================================
 
 # --- Data & Models (CRITICAL) ---
-# Ignore all large data files and model binaries
+# Globally ignore large data binaries
 *.parquet
-*.csv
 *.pkl
 *.h5
 *.joblib
 *.model
-/data/
-/data_processed/
+
+# 1. Ignore EVERYTHING inside the data folders by default...
+/data/*
+/data_processed/*
+
+# 2. ...BUT explicitly un-ignore these specific folders!
+!/data/models/
+!/data/age_data/
+
+# 3. Explicitly un-ignore the file types we actually want to keep in those folders
+!/data/models/*.json
+!/data/age_data/*.csv
 
 # --- Jupyter Notebooks ---
 .ipynb_checkpoints/
