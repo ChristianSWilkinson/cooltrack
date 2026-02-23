@@ -10,18 +10,13 @@ class ThermalEvolutionModels:
     def __init__(self):
         self.dsdt_model = None
         self.tint_model = None
+        self.radius_model = None  # NEW: Radius predictor
 
     def train_models(self, df: pd.DataFrame, tune_hyperparameters: bool = False, clean_outliers: bool = True, outlier_threshold: float = 1.0):
-        """
-        Trains the T_int and dS/dt models. 
-        If clean_outliers is True, it performs a first-pass training to identify 
-        and remove numerical noise from the grid before training the final models.
-        """
         training_df = df.copy()
 
         if clean_outliers:
             logging.info("Performing first-pass training to identify grid outliers...")
-            # Quick baseline model just to find the broken physics points
             dsdt_features = INDEPENDENT_DIMS + ['S_physical', 'T_int']
             X_temp = training_df[dsdt_features]
             y_temp = training_df['abs_log_dsdt']
@@ -42,16 +37,23 @@ class ThermalEvolutionModels:
                 logging.info("No massive outliers found in the grid.")
 
         # --- 1. Train Final T_int Model ---
-        tint_features = INDEPENDENT_DIMS + ['S_physical']
-        X_tint = training_df[tint_features]
+        state_features = INDEPENDENT_DIMS + ['S_physical']
+        X_state = training_df[state_features]
         y_tint = training_df['T_int']
         
         logging.info("Training final T_int state model...")
         self.tint_model = xgb.XGBRegressor(n_estimators=300, max_depth=7, learning_rate=0.05, n_jobs=-1, random_state=42)
-        self.tint_model.fit(X_tint, y_tint)
-        logging.info(f"Final T_int R^2: {self.tint_model.score(X_tint, y_tint):.4f}")
+        self.tint_model.fit(X_state, y_tint)
+        logging.info(f"Final T_int R^2: {self.tint_model.score(X_state, y_tint):.4f}")
 
-        # --- 2. Train Final dS/dt Model ---
+        # --- 2. Train Final Radius Model (NEW) ---
+        y_rad = training_df['Req_Rj']
+        logging.info("Training final Radius state model...")
+        self.radius_model = xgb.XGBRegressor(n_estimators=300, max_depth=7, learning_rate=0.05, n_jobs=-1, random_state=42)
+        self.radius_model.fit(X_state, y_rad)
+        logging.info(f"Final Radius R^2: {self.radius_model.score(X_state, y_rad):.4f}")
+
+        # --- 3. Train Final dS/dt Model ---
         dsdt_features = INDEPENDENT_DIMS + ['S_physical', 'T_int']
         X_dsdt = training_df[dsdt_features]
         y_dsdt = training_df['abs_log_dsdt']
@@ -60,7 +62,6 @@ class ThermalEvolutionModels:
         
         if tune_hyperparameters:
             logging.info("Tuning dS/dt model hyperparameters...")
-            # Basic grid for tuning
             param_dist = {
                 'n_estimators': [300, 500],
                 'max_depth': [6, 8, 10],
