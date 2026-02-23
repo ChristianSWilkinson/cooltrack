@@ -1,0 +1,15 @@
+# Data Manipulation & Math
+numpy
+pandas
+scipy
+
+# Machine Learning
+xgboost
+scikit-learn
+
+# Parquet File Engine
+pyarrow
+
+# Multiprocessing & Progress Bars
+joblib
+tqdm
