@@ -21,12 +21,13 @@ By training an ensemble of XGBoost surrogate models on the HADES grid, CoolTrack
 ```text
 cooltrack/
 ├── data/
-│   ├── HADES_grid/      # Raw and processed .parquet grid files
+│   ├── HADES_grid/      # Raw and processed .parquet grid files (Git Ignored)
 │   ├── age_data/        # Hot-start initial condition CSVs
 │   └── models/          # Cached XGBoost .json models
 ├── notebooks/           # Jupyter notebooks for exploration and plotting
 │   ├── explore_dsdt.ipynb
-│   └── test_cooling_tracks.ipynb
+│   ├── test_cooling_tracks.ipynb
+│   └── inference_only_tracks.ipynb
 ├── scripts/             
 │   └── main.py          # The master multiprocessing pipeline script
 ├── src/cooltrack/       # The core Python package
@@ -42,6 +43,20 @@ cooltrack/
 
 ---
 
+## 📏 Input Parameters & Units
+When constructing a custom planet or modifying grid rows, the engine expects the independent dimensions (`INDEPENDENT_DIMS`) to be provided in the exact following units/scales:
+
+| Parameter | Description | Units / Scale | Example |
+| :--- | :--- | :--- | :--- |
+| `mass_Mj` | Planet Mass | Jupiter Masses ($M_J$) | `1.0` |
+| `T_irr` | Irradiation Temperature | Kelvin (K) | `150.0` |
+| `Met` | Metallicity | $\log_{10}$ (relative to Solar) | `np.log10(3.0)` for 3x Solar |
+| `core` | Core Mass | Earth Masses ($M_\oplus$) | `10.0` |
+| `f_sed` | Cloud Sedimentation Efficiency | Unitless | `1.0` |
+| `kzz` | Eddy Diffusion Coefficient | $\log_{10}(\text{cm}^2/\text{s})$ | `8.0` for $10^8 \text{ cm}^2/\text{s}$ |
+
+---
+
 ## 🚀 Quick Start
 
 ### 1. Run the Master Pipeline
@@ -54,37 +69,39 @@ python scripts/main.py
 * **Subsequent Runs:** Instantly loads the cached models and clean grid, skipping directly to integration.
 
 ### 2. Using the API in Jupyter Notebooks
-You can easily simulate a bespoke planet (e.g., a Jupiter analog) directly in a notebook:
+Because the `.json` models are cached, you can instantly simulate bespoke planets without loading the heavy grid data:
 
 ```python
 import pandas as pd
+import numpy as np
 from cooltrack.models import ThermalEvolutionModels
 from cooltrack.integrator import CoolingIntegrator
 from cooltrack.initial_conditions import InitialConditions
-from cooltrack.constants import Bands
 
-# 1. Load Pre-trained Models and Clean Grid
+# 1. Load Pre-trained Models
 ml_engine = ThermalEvolutionModels()
 ml_engine.load_models("../../data/models/")
-df_clean = pd.read_parquet("../../data/HADES_grid/hades_clean_grid.parquet")
 
 # 2. Initialize Physics Engine
 init_cond = InitialConditions("../../data/age_data/")
 integrator = CoolingIntegrator(ml_engine)
 
-# 3. Define your target planet (e.g., matching a grid row, then overriding parameters)
-planet_row = df_clean.iloc[0].copy()
-planet_row['mass_Mj'] = 1.0     # 1 Jupiter Mass
-planet_row['T_irr'] = 150.0     # 150 K Irradiation
-planet_row['Met'] = 3.0         # 3x Solar Metallicity
-planet_row['core'] = 10.0       # 10 Earth-mass core
+# 3. Define your target planet using correct physical scales
+custom_planet = pd.Series({
+    'mass_Mj': 1.0,               # 1 Jupiter Mass
+    'T_irr': 150.0,               # 150 K
+    'Met': np.log10(3.0),         # 3x Solar Metallicity
+    'core': 10.0,                 # 10 Earth Mass Core
+    'f_sed': 1.0,                 # Standard sedimentation
+    'kzz': 8.0                    # 10^8 cm^2/s
+})
 
 # 4. Get Boundary Conditions
-s_hot_start = init_cond.get_starting_physical_entropy(planet_row['mass_Mj'])
-s_cold_end = df_clean['S_physical'].min()
+s_hot_start = init_cond.get_starting_physical_entropy(custom_planet['mass_Mj'])
+S_COLD_END = 5.8 # Target ending entropy
 
 # 5. Integrate the track!
-ages, entropies = integrator.calculate_track(planet_row, s_hot_start, s_cold_end)
+ages, entropies = integrator.calculate_track(custom_planet, s_hot_start, S_COLD_END)
 ```
 
 ---
