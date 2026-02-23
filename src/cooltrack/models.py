@@ -73,3 +73,42 @@ class ThermalEvolutionModels:
         logging.info(f"Final dS/dt test R^2: {r2_score(y_test, preds):.4f}")
 
         return training_df
+    
+    def save_models(self, save_dir: str):
+        """Saves all trained models to the specified directory."""
+        import os
+        os.makedirs(save_dir, exist_ok=True)
+        
+        logging.info(f"Saving models to {save_dir}...")
+        self.tint_model.save_model(os.path.join(save_dir, 'tint_model.json'))
+        self.radius_model.save_model(os.path.join(save_dir, 'radius_model.json'))
+        self.dsdt_model.save_model(os.path.join(save_dir, 'dsdt_model.json'))
+        
+        for band, model in self.photo_models.items():
+            model.save_model(os.path.join(save_dir, f'photo_{band}.json'))
+            
+        logging.info("All models saved successfully.")
+
+    def load_models(self, load_dir: str):
+        """Loads all trained models from the specified directory."""
+        import os
+        from .constants import PHOTOMETRY_BANDS
+        
+        logging.info(f"Loading models from {load_dir}...")
+        
+        self.tint_model = xgb.XGBRegressor()
+        self.tint_model.load_model(os.path.join(load_dir, 'tint_model.json'))
+        
+        self.radius_model = xgb.XGBRegressor()
+        self.radius_model.load_model(os.path.join(load_dir, 'radius_model.json'))
+        
+        self.dsdt_model = xgb.XGBRegressor()
+        self.dsdt_model.load_model(os.path.join(load_dir, 'dsdt_model.json'))
+        
+        self.photo_models = {}
+        for band in PHOTOMETRY_BANDS:
+            model = xgb.XGBRegressor()
+            model.load_model(os.path.join(load_dir, f'photo_{band}.json'))
+            self.photo_models[band] = model
+            
+        logging.info("All models loaded successfully.")

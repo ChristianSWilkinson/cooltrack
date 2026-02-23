@@ -1,4 +1,5 @@
 import numpy as np
+import difflib
 
 # --- Planetary & Solar Constants ---
 R_J = 69911000          # Jupiter radius (m)
@@ -20,11 +21,51 @@ SECONDS_PER_YR = 3600 * 24 * 365.25
 
 # --- Features & Targets ---
 INDEPENDENT_DIMS = ['mass_Mj', 'T_irr', 'Met', 'core', 'f_sed', 'kzz']
-PHOTOMETRY_BANDS = [
-    'MIRI_F770W_Flambda_wm2um', 'MIRI_F1000W_Flambda_wm2um', 'MIRI_F1065C_Flambda_wm2um', 
-    'MIRI_F1140C_Flambda_wm2um', 'MIRI_F1130W_Flambda_wm2um', 'MIRI_F1280W_Flambda_wm2um', 
-    'MIRI_F1500W_Flambda_wm2um', 'MIRI_F1550C_Flambda_wm2um', 'MIRI_F1800W_Flambda_wm2um', 
-    'MIRI_F2100W_Flambda_wm2um', 'MIRI_F2300C_Flambda_wm2um', 
-    'NIRISS_F277W_Flambda_wm2um', 'NIRISS_F380M_Flambda_wm2um', 
-    'NIRISS_F430M_Flambda_wm2um', 'NIRISS_F480M_Flambda_wm2um'
-]
+
+class Bands:
+    """
+    Helper class for easy autocomplete and fuzzy searching of photometry bands.
+    """
+    # JWST MIRI
+    MIRI_F770W = 'MIRI_F770W_Flambda_wm2um'
+    MIRI_F1000W = 'MIRI_F1000W_Flambda_wm2um'
+    MIRI_F1065C = 'MIRI_F1065C_Flambda_wm2um'
+    MIRI_F1140C = 'MIRI_F1140C_Flambda_wm2um'
+    MIRI_F1130W = 'MIRI_F1130W_Flambda_wm2um'
+    MIRI_F1280W = 'MIRI_F1280W_Flambda_wm2um'
+    MIRI_F1500W = 'MIRI_F1500W_Flambda_wm2um'
+    MIRI_F1550C = 'MIRI_F1550C_Flambda_wm2um'
+    MIRI_F1800W = 'MIRI_F1800W_Flambda_wm2um'
+    MIRI_F2100W = 'MIRI_F2100W_Flambda_wm2um'
+    MIRI_F2300C = 'MIRI_F2300C_Flambda_wm2um'
+    
+    # JWST NIRISS
+    NIRISS_F277W = 'NIRISS_F277W_Flambda_wm2um'
+    NIRISS_F380M = 'NIRISS_F380M_Flambda_wm2um'
+    NIRISS_F430M = 'NIRISS_F430M_Flambda_wm2um'
+    NIRISS_F480M = 'NIRISS_F480M_Flambda_wm2um'
+
+    @classmethod
+    def find(cls, search_term: str) -> str:
+        """
+        Takes a messy string (e.g., 'miri 1000', 'f277w') and returns the exact column name.
+        """
+        valid_bands = {k: v for k, v in vars(cls).items() if not k.startswith('_') and isinstance(v, str)}
+        clean_search = str(search_term).upper().replace(' ', '_').replace('-', '_')
+
+        for key, exact_col_name in valid_bands.items():
+            if clean_search in key:
+                return exact_col_name
+
+        possible_keys = list(valid_bands.keys())
+        matches = difflib.get_close_matches(clean_search, possible_keys, n=1, cutoff=0.3)
+
+        if matches:
+            best_match = matches[0]
+            print(f"Bands.find(): Guessed '{best_match}' from input '{search_term}'")
+            return valid_bands[best_match]
+        else:
+            raise ValueError(f"Could not find a photometric band matching '{search_term}'. Available options: {possible_keys}")
+
+# Automatically generate the list of all band strings for the data loader
+PHOTOMETRY_BANDS = [value for key, value in vars(Bands).items() if not key.startswith('_') and isinstance(value, str)]
