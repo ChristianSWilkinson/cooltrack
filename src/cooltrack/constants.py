@@ -20,3 +20,11 @@ SECONDS_PER_YR = 3600 * 24 * 365.25
 
 # --- Features & Targets ---
 INDEPENDENT_DIMS = ['mass_Mj', 'T_irr', 'Met', 'core', 'f_sed', 'kzz']
+PHOTOMETRY_BANDS = [
+    'MIRI_F770W_Flambda_wm2um', 'MIRI_F1000W_Flambda_wm2um', 'MIRI_F1065C_Flambda_wm2um', 
+    'MIRI_F1140C_Flambda_wm2um', 'MIRI_F1130W_Flambda_wm2um', 'MIRI_F1280W_Flambda_wm2um', 
+    'MIRI_F1500W_Flambda_wm2um', 'MIRI_F1550C_Flambda_wm2um', 'MIRI_F1800W_Flambda_wm2um', 
+    'MIRI_F2100W_Flambda_wm2um', 'MIRI_F2300C_Flambda_wm2um', 
+    'NIRISS_F277W_Flambda_wm2um', 'NIRISS_F380M_Flambda_wm2um', 
+    'NIRISS_F430M_Flambda_wm2um', 'NIRISS_F480M_Flambda_wm2um'
+]
