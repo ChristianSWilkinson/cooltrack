@@ -97,6 +97,7 @@ def load_and_clean_exoweave_hdf5(filepath: str) -> pd.DataFrame:
     
     with h5py.File(filepath, "r") as h5f:
         for model_id in h5f.keys():
+
             model_grp = h5f[model_id]
             
             try:
@@ -129,7 +130,7 @@ def load_and_clean_exoweave_hdf5(filepath: str) -> pd.DataFrame:
                 
                 # Grab the specific physical entropy at the top of the convective envelope
                 try:
-                    row_data['S_physical'] = int_arrays['S'][-1]
+                    row_data['S_physical'] = int_attrs.get('S', np.nan)[-1]
                 except Exception:
                     row_data['S_physical'] = np.nan
                 
@@ -163,6 +164,7 @@ def load_and_clean_exoweave_hdf5(filepath: str) -> pd.DataFrame:
 
     # Convert the extracted dictionary list into a DataFrame
     df = pd.DataFrame(extracted_rows)
+    print(f"Extracted {len(df)} models from Exoweave HDF5 file.")
     
     if df.empty:
         logging.error("No valid models were extracted from the HDF5 file!")
@@ -182,7 +184,7 @@ def load_and_clean_exoweave_hdf5(filepath: str) -> pd.DataFrame:
     
     log_bands = [f'log_{b}' for b in PHOTOMETRY_BANDS]
     critical_cols = INDEPENDENT_DIMS + ['S_physical', 'abs_log_dsdt'] + log_bands
-    
+
     df = df.dropna(subset=critical_cols).reset_index(drop=True)
     
     logging.info(f"✅ Exoweave Grid loaded and mapped successfully. Final shape: {df.shape}")
