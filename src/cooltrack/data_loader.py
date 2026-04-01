@@ -120,12 +120,12 @@ def load_and_clean_exoweave_hdf5(filepath: str) -> pd.DataFrame:
                 
                 # 2. Extract State Variables from Interior
                 int_attrs = model_grp['interior_raw'].attrs
-                int_arrays = model_grp['interior_raw']
+                cool_attrs = model_grp[f"cooling_metrics"].attrs
                 
                 row_data['Req'] = int_attrs.get('R_total', np.nan)
                 
                 # Invert dt/ds to get dS/dt
-                dt_ds = int_attrs.get('dt_ds_total', np.nan)
+                dt_ds = cool_attrs.get("dt_ds", np.nan)
                 row_data['dsdt'] = 1.0 / dt_ds if dt_ds != 0 else np.nan
                 
                 # Grab the specific physical entropy at the top of the convective envelope
@@ -177,6 +177,8 @@ def load_and_clean_exoweave_hdf5(filepath: str) -> pd.DataFrame:
     df['mass_Mj'] = df['mass'] / M_J
     df['Req_Rj'] = df['Req'] / R_J
     df['abs_log_dsdt'] = np.log10(np.abs(df['dsdt']))
+
+    print(f"Extracted {len(df)} models from Exoweave HDF5 file.")
     
     for band in PHOTOMETRY_BANDS:
         df = df[df[band] > 0]
@@ -184,6 +186,8 @@ def load_and_clean_exoweave_hdf5(filepath: str) -> pd.DataFrame:
     
     log_bands = [f'log_{b}' for b in PHOTOMETRY_BANDS]
     critical_cols = INDEPENDENT_DIMS + ['S_physical', 'abs_log_dsdt'] + log_bands
+
+    print(f"Extracted {len(df)} models from Exoweave HDF5 file.")
 
     df = df.dropna(subset=critical_cols).reset_index(drop=True)
     
