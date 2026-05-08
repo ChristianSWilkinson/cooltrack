@@ -613,9 +613,9 @@ class SemiAnalyticalCoolTrack:
                 if fits.get('method_S') == 'dual_softplus':
                     samples_S = np.random.multivariate_normal(fits['popt_S'], cov_S_reg, n_draws)
                     samples_S[:, 0] = fits['popt_S'][0]
-                    samples_S[:, 2] = np.clip(samples_S[:, 2], 1e-3, 5.0)
-                    samples_S[:, 3] = np.clip(samples_S[:, 3], 1e-3, 5.0)
-                    samples_S[:, 6] = np.clip(samples_S[:, 6], 1e-3, 5.0)
+                    #samples_S[:, 2] = np.clip(samples_S[:, 2], -5.0, 5.0)
+                    #samples_S[:, 3] = np.clip(samples_S[:, 3], -5.0, 5.0)
+                    #samples_S[:, 6] = np.clip(samples_S[:, 6], -5.0, 5.0)
                 elif fits.get('method_S') == 'softplus':
                     samples_S = np.random.multivariate_normal(fits['popt_S'], cov_S_reg, n_draws)
                     samples_S[:, 1] = fits['popt_S'][1]
@@ -627,8 +627,8 @@ class SemiAnalyticalCoolTrack:
 
                 if fits.get('method_tau') == 'softplus':
                     samples_tau = np.random.multivariate_normal(fits['popt_tau'], cov_tau_reg, n_draws)
-                    samples_tau[:, 2] = np.clip(samples_tau[:, 2], -10.0, 0.0)
-                    samples_tau[:, 3] = np.clip(samples_tau[:, 3], -10.0, 0.0)
+                    #samples_tau[:, 2] = np.clip(samples_tau[:, 2], -10.0, 0.0)
+                    #samples_tau[:, 3] = np.clip(samples_tau[:, 3], -10.0, 0.0)
                 else:
                     samples_tau = np.random.multivariate_normal([fits['A'], fits['B']], cov_tau_reg, n_draws)
 
@@ -660,7 +660,8 @@ class SemiAnalyticalCoolTrack:
                         ln_S_i = samples_S[i][0] * ln_Tint + samples_S[i][1]
 
                     # Exponentiate the draw, but strictly clip it to the laws of thermodynamics
-                    S_i = np.clip(np.exp(ln_S_i), a_min=None, a_max=max_physical_S)
+                    #S_i = np.clip(np.exp(ln_S_i), a_min=None, a_max=max_physical_S)
+                    S_i = np.exp(ln_S_i)
                     all_S[i, :] = S_i
 
                     if fits.get('method_tau') == 'softplus':
@@ -684,18 +685,11 @@ class SemiAnalyticalCoolTrack:
                 results['S_physical_upper'] = np.percentile(all_S, 84, axis=0)
 
                 # =============================================================
-                # Analytical First-Order Error Propagation (Taylor Expansion)
-                # Projects Entropy uncertainty directly into Radius space using
-                # exact local gradient to prevent extrapolation explosions.
+                # Exact Non-Linear Error Propagation
+                # Maps the entropy bounds directly through the radius surrogate
                 # =============================================================
-                grad_R = softplus_derivative(ln_S_median, *fits['popt_R'])
-                ln_R_median = softplus_piecewise(ln_S_median, *fits['popt_R'])
-                
-                dln_S_lower = ln_S_median - np.log(results['S_physical_lower'])
-                dln_S_upper = np.log(results['S_physical_upper']) - ln_S_median
-
-                results['Req_Rj_lower'] = np.exp(ln_R_median - (grad_R * dln_S_lower))
-                results['Req_Rj_upper'] = np.exp(ln_R_median + (grad_R * dln_S_upper))
+                results['Req_Rj_lower'] = np.exp(softplus_piecewise(np.log(results['S_physical_lower']), *fits['popt_R']))
+                results['Req_Rj_upper'] = np.exp(softplus_piecewise(np.log(results['S_physical_upper']), *fits['popt_R']))
 
                 for band, params in fits.get('photometry', {}).items():
                     if params is None:
