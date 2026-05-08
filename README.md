@@ -1,18 +1,14 @@
 # CoolTrack 🪐
 
-**CoolTrack** is a machine-learning-accelerated physics engine for calculating the thermal evolution, structural contraction, and photometric light curves of gas giant exoplanets and brown dwarfs. 
-
-By training an ensemble of XGBoost surrogate models on the HADES grid, CoolTrack bypasses the numerical instability of traditional 1D structural evolution codes. It cleans broken grid points, learns the underlying thermodynamic laws, and uses a custom ODE solver to integrate exact planetary ages from hot-start initial conditions.
+**CoolTrack** is a semi-analytical modeling framework for planetary thermal evolution. It provides tools to predict and extract thermodynamic pathways, cooling rates, structural radii, and photometry for substellar objects (gas giants and brown dwarfs). By converting raw, heavy grids into continuous mathematical surrogate models, CoolTrack enables microsecond-scale parameter evaluations and robust Monte Carlo error propagation.
 
 ## ✨ Key Features
 
-* **Self-Cleaning ML Engine:** Automatically identifies and removes broken physics/numerical noise from raw evolution grids before training robust XGBoost surrogate models.
-* **Exact Age Integration:** Integrates the cooling rate ($dS/dt$) to calculate planetary ages using precise "hot-start" boundary conditions based on exact core masses and composition.
-* **Structural & Thermal Tracking:** Simulates the continuous evolution of Internal Temperature ($T_{int}$), Physical Entropy ($S_{physical}$), and Radius ($R_J$).
-* **JWST Observables:** Predicts the evolution of 15 different photometric fluxes (MIRI and NIRISS), complete with a fuzzy-finder for easy filter selection.
-* **Publication-Ready Smoothing:** Includes a suite of mathematical filters (Savitzky-Golay, Splines, Gaussian) to remove ML "staircase" artifacts from simulated tracks.
-* **Multiprocessed Pipeline:** Uses `joblib` to distribute ODE integration across all CPU cores, calculating ages for grids of 100,000+ planets in minutes.
-* **Smart Caching:** Saves trained models and clean data to disk locally to bypass retraining times in Jupyter Notebooks.
+* **Ultra-Fast Predictor Engine:** Uses a KDTree-backed coefficient database (`CoolTrackPredictor`) to instantly evaluate evolutionary tracks without loading massive raw HDF5/Parquet data.
+* **Semi-Analytical Surrogate Fits:** Employs advanced, localized curve fitting (including piecewise softplus transitions, B-splines, and sigmoids) to continuously map thermodynamics, radius, and photometry across the parameter space.
+* **Robust Uncertainty Propagation:** Integrates strict Monte Carlo error propagation using regularized covariance matrices to generate scientifically accurate confidence intervals.
+* **Physical Boundary Conditions:** Automatically interpolates specific starting entropies bounded by theoretical "hot start" (gravitational collapse) and "cold start" (core accretion) formation scenarios.
+* **Parallel Grid Builder:** Features an automated, multi-core processing script to rapidly ingest raw grids and compile the lightweight analytical coefficient database.
 
 ---
 
@@ -21,23 +17,16 @@ By training an ensemble of XGBoost surrogate models on the HADES grid, CoolTrack
 ```text
 cooltrack/
 ├── data/
-│   ├── HADES_grid/      # Raw and processed .parquet grid files (Git Ignored)
-│   ├── age_data/        # Hot-start initial condition CSVs
-│   └── models/          # Cached XGBoost .json models
-├── notebooks/           # Jupyter notebooks for exploration and plotting
-│   ├── explore_dsdt.ipynb
-│   ├── test_cooling_tracks.ipynb
-│   └── inference_only_tracks.ipynb
+│   ├── age_data/                        # CSVs containing hot/cold start boundary condition data
+│   └── cooltrack_coefficients.dat       # The compiled, lightweight analytical database
+├── notebooks/                           # Jupyter notebooks for exploration and plotting
 ├── scripts/             
-│   └── main.py          # The master multiprocessing pipeline script
-├── src/cooltrack/       # The core Python package
-│   ├── __init__.py
-│   ├── constants.py     # Physical constants and JWST Bands fuzzy-finder
-│   ├── data_loader.py   # Parquet ingestion and log10 conversions
-│   ├── initial_conditions.py # Hot-start boundary interpolators
-│   ├── integrator.py    # SciPy ODE solver for dS/dt
-│   ├── models.py        # XGBoost ensemble and outlier cleaning
-│   └── smoothing.py     # Savitzky-Golay and spline filters
+│   └── build_coefficient_grid.py        # Master parallel script to generate the .dat database
+├── src/cooltrack/                       # The core Python package
+│   ├── cooltrack.py                     # Core SemiAnalytical engine and mathematical fitting logic
+│   ├── predictor.py                     # Ultra-fast KDTree-based evaluation API
+│   ├── initial_conditions.py            # Hot/cold start entropy boundary condition logic
+│   └── data_loader.py                   # HDF5/Parquet ingestion, cleaning, and caching
 └── README.md
 ```
 
@@ -52,90 +41,58 @@ When constructing a custom planet or modifying grid rows, the engine expects the
 | `T_irr` | Irradiation Temperature | Kelvin (K) | `150.0` |
 | `Met` | Metallicity | $\log_{10}$ (relative to Solar) | `np.log10(3.0)` for 3x Solar |
 | `core` | Core Mass | Earth Masses ($M_\oplus$) | `10.0` |
-| `f_sed` | Cloud Sedimentation Efficiency | Unitless | `1.0` |
+| `f_sed_volatile` | Volatile Cloud Sedimentation | Unitless | `6.0` |
+| `f_sed_refractory`| Refractory Cloud Sedimentation | Unitless | `6.0` |
 | `kzz` | Eddy Diffusion Coefficient | $\log_{10}(\text{cm}^2/\text{s})$ | `8.0` for $10^8 \text{ cm}^2/\text{s}$ |
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Run the Master Pipeline
-To calculate the ages for the entire HADES grid in bulk, run the master script from the root directory of your project:
+### 1. Build the Analytical Database
+To compile the raw planetary grid into the fast surrogate coefficient database, run the master script from the `scripts/` directory. This will automatically utilize available CPU cores to process the HDF5/Parquet files.
 
 ```bash
-python scripts/main.py
+cd scripts
+python build_coefficient_grid.py
 ```
-* **First Run:** Loads the raw parquet file, cleans outliers, trains 18 XGBoost models (State, Radius, dS/dt, and 15 JWST bands), saves the models to `data/models/`, and runs the parallel integrator.
-* **Subsequent Runs:** Instantly loads the cached models and clean grid, skipping directly to integration.
+*This outputs `cooltrack_coefficients.dat` into your `data/` folder.*
 
-### 2. Using the API in Jupyter Notebooks
-Because the `.json` models are cached, you can instantly simulate bespoke planets without loading the heavy grid data:
+### 2. Using the Fast Predictor API
+For everyday scientific use and pipeline integration, the `CoolTrackPredictor` is the recommended interface. It bypasses raw data loading entirely for microsecond evaluations.
 
 ```python
-import pandas as pd
-import numpy as np
-from cooltrack.models import ThermalEvolutionModels
-from cooltrack.integrator import CoolingIntegrator
-from cooltrack.initial_conditions import InitialConditions
+from cooltrack.predictor import CoolTrackPredictor
 
-# 1. Load Pre-trained Models
-ml_engine = ThermalEvolutionModels()
-ml_engine.load_models("../../data/models/")
-
-# 2. Initialize Physics Engine
-init_cond = InitialConditions("../../data/age_data/")
-integrator = CoolingIntegrator(ml_engine)
-
-# 3. Define your target planet using correct physical scales
-custom_planet = pd.Series({
-    'mass_Mj': 1.0,               # 1 Jupiter Mass
-    'T_irr': 150.0,               # 150 K
-    'Met': np.log10(3.0),         # 3x Solar Metallicity
-    'core': 10.0,                 # 10 Earth Mass Core
-    'f_sed': 1.0,                 # Standard sedimentation
-    'kzz': 8.0                    # 10^8 cm^2/s
-})
-
-# 4. Get Boundary Conditions
-s_hot_start = init_cond.get_starting_physical_entropy(custom_planet['mass_Mj'])
-S_COLD_END = 5.8 # Target ending entropy
-
-# 5. Integrate the track!
-ages, entropies = integrator.calculate_track(custom_planet, s_hot_start, S_COLD_END)
-```
-
----
-
-## 🛠 Advanced Tools
-
-### The JWST Fuzzy Finder
-No need to memorize exact string names for photometric filters. Use `Bands.find()` to dynamically grab the correct column for MIRI or NIRISS:
-
-```python
-from cooltrack.constants import Bands
-
-# Type it casually; the fuzzy finder will match it!
-my_filter = Bands.find('miri 1000') 
-print(my_filter) # Outputs: 'MIRI_F1000W_Flambda_wm2um'
-
-# Predict the flux
-log_flux = ml_engine.photo_models[my_filter].predict(input_features)
-```
-
-### Publication-Ready Smoothing
-XGBoost predictions can look jagged when zoomed in. Use `TrackSmoother` to apply physically realistic smoothing algorithms to your cooling curves:
-
-```python
-from cooltrack.smoothing import TrackSmoother
-
-# Smooth out the ML staircase artifacts using a Savitzky-Golay filter
-t_ints_smooth = TrackSmoother.smooth(
-    x=ages_array, 
-    y=raw_temperatures, 
-    method='savgol', 
-    window_length=31, 
-    polyorder=3
+# 1. Boot up the Oracle
+oracle = CoolTrackPredictor(
+    dat_filepath="../data/cooltrack_coefficients.dat", 
+    age_data_path="../data/age_data"
 )
+
+# 2. Define your target planet
+target_planet = {
+    'mass_Mj': 5.0, 
+    'T_irr': 0.0, 
+    'Met': 0.0, 
+    'core': 10.0,
+    'f_sed_refractory': 6.0, 
+    'f_sed_volatile': 6.0, 
+    'kzz': 8.0
+}
+
+target_age_yr = 150e6  # 150 Million Years
+
+# 3. Evaluate instantly (n_draws=0 for median only, >0 for Monte Carlo uncertainties)
+results = oracle.predict(
+    target_planet=target_planet, 
+    target_age_yr=target_age_yr, 
+    start_type=19,     # 19 = Hottest start, 0 = Coldest start
+    n_draws=250        # Calculate 1-sigma uncertainty bounds
+)
+
+print(f"Radius: {results['Req_Rj']:.2f} R_J")
+print(f"T_int: {results['T_int']:.0f} K (+{results['T_int_upper'] - results['T_int']:.0f} / -{results['T_int'] - results['T_int_lower']:.0f})")
 ```
 
 ---

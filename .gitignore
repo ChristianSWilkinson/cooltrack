@@ -1,56 +1,39 @@
-# ==========================================
-# CoolTrack .gitignore
-# ==========================================
-
-# --- Data & Models (CRITICAL) ---
-# Globally ignore large data binaries
-*.parquet
-*.pkl
-*.h5
-*.joblib
-*.model
-
-# 1. Ignore EVERYTHING inside the data folders by default...
-/data/*
-/data_processed/*
-
-# 2. ...BUT explicitly un-ignore these specific folders!
-!/data/models/
-!/data/age_data/
-
-# 3. Explicitly un-ignore the file types we actually want to keep in those folders
-!/data/models/*.json
-!/data/age_data/*.csv
-
-# --- Jupyter Notebooks ---
-.ipynb_checkpoints/
-
-# --- Python ---
+# Python caches
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
 
-# --- Virtual Environments ---
+# Environment and Package builds
+*.egg-info/
+build/
+dist/
+.env
 venv/
 env/
-.venv/
-conda/
-miniconda/
 
-# --- OS Generated Files ---
+# Mac OS clutter
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
 
-# --- IDEs and Editors ---
-.vscode/
-.idea/
-*.swp
-*.swo
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
 
-# --- Logs and Outputs ---
-*.log
-/outputs/
+# Data and outputs
+data/
+!data/cooltrack_coefficients.dat
+!data/age_data/
+exoweave_outputs/
+tmp/
+outputs/
+
+# ExoWeave / FuzzyCore specific outputs
+results/
+failed/
+solver_steps.csv
+test_run.csv
+*.h5
+*.nml
+*.pkl
+*.pdf
+
+# Readme generator
+generate_readme.py
