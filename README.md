@@ -56,6 +56,8 @@ To compile the raw planetary grid into the fast surrogate coefficient database, 
 cd scripts
 python build_coefficient_grid.py
 ```
+ONLY DO IF YOU HAVE ACCESS TO THE UNDERLYING GRID OTHERWISE USE JOINED COEFFICIENT DTABASE PROVIDED.
+
 *This outputs `cooltrack_coefficients.dat` into your `data/` folder.*
 
 ### 2. Using the Fast Predictor API
