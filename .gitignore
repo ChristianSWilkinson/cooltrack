@@ -18,9 +18,8 @@ env/
 .ipynb_checkpoints/
 
 # Data and outputs
-data/
-!data/cooltrack_coefficients.dat
-!data/age_data/
+data/sonora/
+data/ATMO_2020_models/
 exoweave_outputs/
 tmp/
 outputs/
