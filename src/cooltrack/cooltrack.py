@@ -607,8 +607,10 @@ class SemiAnalyticalCoolTrack:
         # 6. Strict Monte Carlo Error Propagation
         if n_draws > 0:
             try:
-                cov_S_reg = regularize_cov(fits['cov_S'], 0.05)
-                cov_tau_reg = regularize_cov(fits['cov_tau'], 0.10)
+                cov_S_reg = regularize_cov(fits['cov_S'], 1)
+                cov_tau_reg = regularize_cov(fits['cov_tau'], 1)
+                cov_R_reg = regularize_cov(fits['cov_R'], 1)
+                
 
                 if fits.get('method_S') == 'dual_softplus':
                     samples_S = np.random.multivariate_normal(fits['popt_S'], cov_S_reg, n_draws)
@@ -632,6 +634,8 @@ class SemiAnalyticalCoolTrack:
                 else:
                     samples_tau = np.random.multivariate_normal([fits['A'], fits['B']], cov_tau_reg, n_draws)
 
+                samples_R = np.random.multivariate_normal(fits['popt_R'], cov_R_reg, n_draws)
+
                 phot_samples, all_phot_mc = {}, {}
                 for band, params in fits.get('photometry', {}).items():
                     if params is not None and params['method'] == 'bspline':
@@ -646,6 +650,7 @@ class SemiAnalyticalCoolTrack:
 
                 all_ages = np.zeros((n_draws, n_points))
                 all_S = np.zeros((n_draws, n_points))
+                all_R = np.zeros((n_draws, n_points))
                 
                 # ---> THE CLEVER CAP <---
                 # Query the absolute maximum physical entropy for this mass (Hot Start / Bin 19)
@@ -663,6 +668,9 @@ class SemiAnalyticalCoolTrack:
                     #S_i = np.clip(np.exp(ln_S_i), a_min=None, a_max=max_physical_S)
                     S_i = np.exp(ln_S_i)
                     all_S[i, :] = S_i
+
+                    ln_R_i = softplus_piecewise(ln_S_median, *samples_R[i])
+                    all_R[i, :] = np.exp(ln_R_i)
 
                     if fits.get('method_tau') == 'softplus':
                         ln_tau_i = softplus_piecewise(ln_Tint, *samples_tau[i])
@@ -683,13 +691,8 @@ class SemiAnalyticalCoolTrack:
                 results['age_yr_upper'] = np.percentile(all_ages, 84, axis=0)
                 results['S_physical_lower'] = np.percentile(all_S, 16, axis=0)
                 results['S_physical_upper'] = np.percentile(all_S, 84, axis=0)
-
-                # =============================================================
-                # Exact Non-Linear Error Propagation
-                # Maps the entropy bounds directly through the radius surrogate
-                # =============================================================
-                results['Req_Rj_lower'] = np.exp(softplus_piecewise(np.log(results['S_physical_lower']), *fits['popt_R']))
-                results['Req_Rj_upper'] = np.exp(softplus_piecewise(np.log(results['S_physical_upper']), *fits['popt_R']))
+                results['Req_Rj_lower'] = np.percentile(all_R, 16, axis=0)
+                results['Req_Rj_upper'] = np.percentile(all_R, 84, axis=0)
 
                 for band, params in fits.get('photometry', {}).items():
                     if params is None:
