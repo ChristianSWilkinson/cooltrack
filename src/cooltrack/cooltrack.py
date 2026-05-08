@@ -646,6 +646,10 @@ class SemiAnalyticalCoolTrack:
 
                 all_ages = np.zeros((n_draws, n_points))
                 all_S = np.zeros((n_draws, n_points))
+                
+                # ---> THE CLEVER CAP <---
+                # Query the absolute maximum physical entropy for this mass (Hot Start / Bin 19)
+                max_physical_S = self.init_conds.get_starting_physical_entropy(mass_mjup=mass, bin_index=19)
 
                 for i in range(n_draws):
                     if fits.get('method_S') == 'dual_softplus':
@@ -655,7 +659,8 @@ class SemiAnalyticalCoolTrack:
                     else:
                         ln_S_i = samples_S[i][0] * ln_Tint + samples_S[i][1]
 
-                    S_i = np.exp(ln_S_i)
+                    # Exponentiate the draw, but strictly clip it to the laws of thermodynamics
+                    S_i = np.clip(np.exp(ln_S_i), a_min=None, a_max=max_physical_S)
                     all_S[i, :] = S_i
 
                     if fits.get('method_tau') == 'softplus':
