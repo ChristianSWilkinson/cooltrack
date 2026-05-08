@@ -61,6 +61,13 @@ ONLY DO IF YOU HAVE ACCESS TO THE UNDERLYING GRID OTHERWISE USE JOINED COEFFICIE
 *This outputs `cooltrack_coefficients.dat` into your `data/` folder.*
 
 ### 2. Using the Fast Predictor API
+To install the module please use.
+
+```bash
+pip install -e .
+```
+
+### 3. Using the Fast Predictor API
 For everyday scientific use and pipeline integration, the `CoolTrackPredictor` is the recommended interface. It bypasses raw data loading entirely for microsecond evaluations.
 
 ```python
