@@ -20,6 +20,7 @@ env/
 # Data and outputs
 data/sonora/
 data/ATMO_2020_models/
+data/cooltrack_coefficients.dat
 exoweave_outputs/
 tmp/
 outputs/
