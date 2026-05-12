@@ -113,13 +113,13 @@ class InitialConditions:
                 "Not enough binned data for S_cold/S_hot interpolators."
             )
             
-        # Create interpolators
+        # Create interpolators (mapped in log-mass space!)
         s_cold = interp1d(
-            result['M_bin'], result['min'], 
+            np.log10(result['M_bin']), result['min'], 
             fill_value='extrapolate', kind='linear'
         )
         s_hot = interp1d(
-            result['M_bin'], result['max'], 
+            np.log10(result['M_bin']), result['max'], 
             fill_value='extrapolate', kind='linear'
         )
         
@@ -149,8 +149,9 @@ class InitialConditions:
         Returns:
             float: The starting specific physical entropy in J/K/kg.
         """
-        s_min_k = float(self.s_cold_interp(mass_mjup))
-        s_max_k = float(self.s_hot_interp(mass_mjup))
+        log_mass = np.log10(mass_mjup)
+        s_min_k = float(self.s_cold_interp(log_mass))
+        s_max_k = float(self.s_hot_interp(log_mass))
         
         # Ensure correct ordering
         if s_min_k > s_max_k: 

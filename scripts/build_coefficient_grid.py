@@ -43,19 +43,25 @@ def process_grid_point(pt, engine, phot_bands):
         'kzz': pt[6]
     }
     
-    # Run the heavy extraction
-    fits = engine.fit_surrogate(
-        target_planet=target, 
-        photometry_bands=phot_bands, 
-        photometry_method='bspline'
-    )
-    
-    # Memory optimization: Discard raw grid data, keep only the coldest temperature
-    min_tint = fits['track_data']['ln_Tint'].min()
-    fits['track_data'] = pd.DataFrame({'ln_Tint': [min_tint]})
-    fits['search_vector'] = pt 
-    
-    return fits
+    try:
+        # Run the heavy extraction
+        fits = engine.fit_surrogate(
+            target_planet=target, 
+            photometry_bands=phot_bands, 
+            photometry_method='bspline'
+        )
+        
+        # Memory optimization: Discard raw grid data, keep only the coldest temperature
+        min_tint = fits['track_data']['ln_Tint'].min()
+        fits['track_data'] = pd.DataFrame({'ln_Tint': [min_tint]})
+        fits['search_vector'] = pt 
+        
+        return fits
+        
+    except Exception as e:
+        # If the grid point is missing, has < 3 rows, or math fails, catch it!
+        # Returning None prevents the multiprocessing pool from exploding.
+        return None
 
 
 def main():
@@ -66,7 +72,7 @@ def main():
     init_conds = InitialConditions(age_data_path=AGE_DATA_PATH)
 
     print(f"Loading raw planetary grid from {GRID_PATH}...")
-    df_grid = load_grid(GRID_PATH, use_cache=True)
+    df_grid = load_grid(GRID_PATH, use_cache=False)
 
     print("Initializing SemiAnalyticalCoolTrack engine...")
     engine = SemiAnalyticalCoolTrack(
@@ -81,10 +87,10 @@ def main():
     # =====================================================================
     mass_mj = np.logspace(np.log10(0.1), np.log10(50.0), 100)  
     t_irr = [0.0, 100.0, 500.0]
-    met = [0.0]
+    met = [-1.0, 0.0, 1.0]
     core = [10.0]
-    fsed_ref = [3.0, 4.0]
-    fsed_vol = [3.0, 4.0]
+    fsed_ref = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    fsed_vol = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     kzz = [8.0]
 
     grid_points = list(itertools.product(mass_mj, t_irr, met, core, fsed_ref, fsed_vol, kzz))
@@ -105,10 +111,11 @@ def main():
 
     # Launch the parallel pool
     with mp.Pool(num_cores) as pool:
-        # imap_unordered is significantly faster than standard map() because it 
-        # yields results as soon as they finish computing, preventing bottlenecks.
         for i, fits in enumerate(pool.imap_unordered(worker_func, grid_points)):
-            precomputed_fits.append(fits)
+            
+            # ONLY append if the fit was successful
+            if fits is not None:
+                precomputed_fits.append(fits)
             
             # Progress tracker
             if (i + 1) % 50 == 0 or (i + 1) == len(grid_points):

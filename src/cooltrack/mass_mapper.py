@@ -35,7 +35,7 @@ class DoubleShotMassInverter:
         system_age_yr, 
         observed_band='JWST/MIRI.F1500W',
         min_mass=0.3, 
-        max_mass=25.0,
+        max_mass=50.0,
         fixed_params=None
     ):
         self.oracle = oracle

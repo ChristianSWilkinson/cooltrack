@@ -52,7 +52,7 @@ def load_and_clean_grid_pandas(filepath: str) -> pd.DataFrame:
         'S_physical', 'dsdt'
     ] + PHOTOMETRY_BANDS
     
-    mass_threshold_kg = 20.0 * M_J
+    mass_threshold_kg = 50.0 * M_J
     filters = [
         ('T_int', '<', 2000),
         ('mass', '<=', mass_threshold_kg)
@@ -194,7 +194,7 @@ def load_and_clean_exoweave_hdf5(filepath: str) -> pd.DataFrame:
         return df
     
     # --- Standard Cleaning Logic ---
-    mass_threshold_kg = 20.0 * M_J
+    mass_threshold_kg = 50.0 * M_J
     df = df[(df['T_int'] < 2000) & (df['mass'] <= mass_threshold_kg)].copy()
 
     df['mass_Mj'] = df['mass'] / M_J
