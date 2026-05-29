@@ -24,16 +24,19 @@ data/cooltrack_coefficients.dat
 exoweave_outputs/
 tmp/
 outputs/
+*.parquet
+*.dat
+*.h5
 
 # ExoWeave / FuzzyCore specific outputs
 results/
 failed/
 solver_steps.csv
 test_run.csv
-*.h5
 *.nml
 *.pkl
 *.pdf
 
 # Readme generator
 generate_readme.py
+*.zip

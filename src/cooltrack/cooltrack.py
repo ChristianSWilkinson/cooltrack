@@ -343,6 +343,15 @@ class SemiAnalyticalCoolTrack:
         track = self._calculate_weights(target_planet)
         w_sqrt = np.sqrt(track['weight'])
         fits = {'target': target_planet, 'track_data': track, 'photometry': {}}
+        # Store the fit's actual T_int support range as a small explicit field,
+        # so evolve() can clip the start to a safe range even if the database
+        # build later strips/reduces track_data for size. Without this, the
+        # clip range can collapse to a single point if track_data is reduced.
+        try:
+            _t = track['ln_Tint'].values
+            fits['T_int_range_K'] = (float(np.exp(_t.min())), float(np.exp(_t.max())))
+        except Exception:
+            pass
 
         # 1. Thermodynamics S(T_int)
         x_Tint = track['ln_Tint'].values
@@ -406,35 +415,52 @@ class SemiAnalyticalCoolTrack:
             fits.update({'method_tau': 'linear', 'A': A, 'B': B, 'cov_tau': cov})
             fits['r2_tau'] = weighted_r2(y_tau, A * x_Tint + B, track['weight'])
 
-        # 3. Structural Radius(S)
-        x_S = track['ln_S'].values
+        # 3. Structural Radius(T_int)
+        # NOTE: radius is fit DIRECTLY against ln_Tint (not ln_S). The grid's
+        # R(T_eff) relation is the well-validated, mass-clean one; fitting R as a
+        # function of T_int keeps the radius off the entropy surrogate entirely,
+        # so evolve()'s R(T_int) reproduces that validated relation and R(age)
+        # stays consistent with T_eff(age). 'radius_basis' records this so evolve
+        # knows which axis to evaluate popt_R on (older .dat files default to 'S').
+        x_R_axis = x_Tint                      # ln_Tint, defined in section 1
         y_R = track['ln_Req'].values
-        p0_R = [np.percentile(x_S, 50), np.percentile(y_R, 50), 0.01, 0.5, 4.0]
+        p0_R = [np.percentile(x_R_axis, 50), np.percentile(y_R, 50), 0.05, 0.3, 4.0]
         bounds_R = (
-            [np.percentile(x_S, 1), np.min(y_R), -10.0, -0.5, 1.0], 
-            [np.percentile(x_S, 99)*2, np.max(y_R), 100, 100.0, 100.0]
+            [np.percentile(x_R_axis, 1), np.min(y_R) - 1.0, -2.0, -2.0, 0.5],
+            [np.percentile(x_R_axis, 99), np.max(y_R) + 1.0, 5.0, 5.0, 100.0]
         )
-        
+
         try:
             popt_R, cov_R = curve_fit(
-                softplus_piecewise, x_S, y_R, p0=p0_R, 
+                softplus_piecewise, x_R_axis, y_R, p0=p0_R,
                 bounds=bounds_R, sigma=sigma_weights, method='trf'
             )
-            r2_R = weighted_r2(y_R, softplus_piecewise(x_S, *popt_R), track['weight'])
-            #print(f"Radius fit successful with R²={r2_R:.3f}")
-            #print(f"Radius fit parameters: {popt_R}")
+            r2_R = weighted_r2(y_R, softplus_piecewise(x_R_axis, *popt_R), track['weight'])
         except Exception:
             try:
-                (G, H), _ = np.polyfit(x_S, y_R, deg=1, w=w_sqrt, cov=True)
-                popt_R = [0, H, G, G, 10.0]
+                (G, H), _ = np.polyfit(x_R_axis, y_R, deg=1, w=w_sqrt, cov=True)
+                popt_R = [np.median(x_R_axis), H + G * np.median(x_R_axis), G, G, 10.0]
                 cov_R = np.eye(5) * 1e-4
-                r2_R = weighted_r2(y_R, G * x_S + H, track['weight'])
+                r2_R = weighted_r2(y_R, G * x_R_axis + H, track['weight'])
             except Exception:
-                popt_R = [0, 0, 0, 0, 10.0]
+                popt_R = [np.median(x_R_axis), np.median(y_R), 0.0, 0.0, 10.0]
                 cov_R = np.eye(5) * 1e-4
                 r2_R = 0.0
-                
-        fits.update({'popt_R': popt_R, 'cov_R': cov_R, 'r2_R': r2_R})
+
+        # Weighted residual scatter of the R fit: this is the honest, stable
+        # measure of how well the surrogate pins radius, and is what evolve()
+        # turns into the uncertainty band (instead of the near-degenerate
+        # softplus parameter covariance, which produces runaway bands).
+        try:
+            resid_R = y_R - softplus_piecewise(x_R_axis, *popt_R)
+            R_resid_var = float(np.average(resid_R**2, weights=track['weight'].values))
+        except Exception:
+            R_resid_var = 0.0
+
+        fits.update({
+            'popt_R': popt_R, 'cov_R': cov_R, 'r2_R': r2_R,
+            'radius_basis': 'Tint', 'R_resid_var': R_resid_var,
+        })
 
         # 4. Photometry
         if photometry_bands:
@@ -518,6 +544,26 @@ class SemiAnalyticalCoolTrack:
         target = fits['target']
         mass = target.get('mass_Mj', 10 ** target.get('log10_mass_Mj', 1.0))
 
+        # Safe T_int range for the start clip. Built as a robust hierarchy:
+        #   1) an explicit (T_min, T_max) stored alongside the fit (preferred -
+        #      added below by fit_surrogate so rebuilt .dat files carry it);
+        #   2) the spread of track_data['ln_Tint'] if it has real width;
+        #   3) a generous substellar safety range (50-4000 K) if the database
+        #      stored a reduced single-row track_data to save space.
+        # This decouples the clip from how much of the training neighbourhood
+        # the .dat build chose to keep.
+        rng = fits.get('T_int_range_K')
+        if rng is not None and float(rng[1]) > float(rng[0]):
+            ln_T_lo = float(np.log(float(rng[0])))
+            ln_T_hi = float(np.log(float(rng[1])))
+        else:
+            _ln_lo = float(fits['track_data']['ln_Tint'].min())
+            _ln_hi = float(fits['track_data']['ln_Tint'].max())
+            if _ln_hi - _ln_lo > 0.1:
+                ln_T_lo, ln_T_hi = _ln_lo, _ln_hi
+            else:
+                ln_T_lo, ln_T_hi = float(np.log(50.0)), float(np.log(4000.0))
+
         # 1. Boundary Conditions
         if T_start_override is not None:
             ln_T0 = np.log(T_start_override)
@@ -532,18 +578,19 @@ class SemiAnalyticalCoolTrack:
                 mass_mjup=mass, bin_index=start_type
             )
             ln_S0 = np.log(S0_phys)
+            WIDE_LO, WIDE_HI = np.log(10.0), np.log(100000.0)
             try:
                 if fits.get('method_S') == 'dual_softplus':
                     res = minimize_scalar(
                         lambda x: (dual_softplus_piecewise(x, *fits['popt_S']) - ln_S0)**2, 
-                        bounds=(np.log(10.0), np.log(100000.0)), 
+                        bounds=(WIDE_LO, WIDE_HI), 
                         method='bounded'
                     )
                     ln_T0 = res.x
                 elif fits.get('method_S') == 'softplus':
                     res = minimize_scalar(
                         lambda x: (softplus_piecewise(x, *fits['popt_S']) - ln_S0)**2, 
-                        bounds=(np.log(10.0), np.log(100000.0)), 
+                        bounds=(WIDE_LO, WIDE_HI), 
                         method='bounded'
                     )
                     ln_T0 = res.x
@@ -551,6 +598,22 @@ class SemiAnalyticalCoolTrack:
                     ln_T0 = (ln_S0 - fits['D']) / fits['C']
             except Exception as e:
                 raise RuntimeError(f"Numerical inversion failed: {e}")
+
+            # Fallback: if the inversion couldn't find a match anywhere in the
+            # wide range (lands on a boundary), the IC entropy is on a different
+            # absolute scale than the grid's S_physical (CGS vs SI, different
+            # mean molecular weight, etc.) and the absolute match is meaningless.
+            # In that case interpret start_type as a quantile of the grid's
+            # T_int range: bin (n_bins-1) -> top of grid, bin 0 -> bottom. This
+            # decouples the start from the entropy-normalization mismatch.
+            boundary_tol = 0.05
+            n_bins = 20
+            if (ln_T0 - WIDE_LO) < boundary_tol or (WIDE_HI - ln_T0) < boundary_tol:
+                frac = max(0.0, min(1.0, float(start_type) / float(n_bins - 1)))
+                ln_T0 = ln_T_lo + frac * (ln_T_hi - ln_T_lo)
+
+            # Never start outside the grid's T_int support (no surrogate extrapolation).
+            ln_T0 = float(np.clip(ln_T0, ln_T_lo, ln_T_hi))
 
         T0 = np.exp(ln_T0)
         T_end = np.exp(fits['track_data']['ln_Tint'].min())
@@ -577,12 +640,17 @@ class SemiAnalyticalCoolTrack:
         dt_median = -((tau_median[:-1] + tau_median[1:]) / 2.0) * np.diff(S_median)
         age_yr[1:] = np.cumsum(dt_median) / (3600 * 24 * 365.25)
 
+        # Radius is evaluated on whichever axis it was fit against. New fits use
+        # 'Tint' (decoupled from the entropy surrogate); legacy .dat files fall
+        # back to the old ln_S basis so they still run unchanged.
+        ln_R_axis = ln_Tint if fits.get('radius_basis') == 'Tint' else ln_S_median
+
         results = {
             'T_int': T_int_arr, 
             'S_physical': S_median, 
             'tau': tau_median, 
             'age_yr': age_yr, 
-            'Req_Rj': np.exp(softplus_piecewise(ln_S_median, *fits['popt_R']))
+            'Req_Rj': np.exp(softplus_piecewise(ln_R_axis, *fits['popt_R']))
         }
 
         # 5. Median Photometry
@@ -609,7 +677,9 @@ class SemiAnalyticalCoolTrack:
             try:
                 cov_S_reg = regularize_cov(fits['cov_S'], 1)
                 cov_tau_reg = regularize_cov(fits['cov_tau'], 1)
-                cov_R_reg = regularize_cov(fits['cov_R'], 1)
+                # Radius cov is only used by the legacy (ln_S-basis) fallback.
+                # Cap it tightly: 1.0 allowed an e^1 ~ x2.7 swing in log-radius.
+                cov_R_reg = regularize_cov(fits['cov_R'], 0.02)
                 
 
                 if fits.get('method_S') == 'dual_softplus':
@@ -635,6 +705,14 @@ class SemiAnalyticalCoolTrack:
                     samples_tau = np.random.multivariate_normal([fits['A'], fits['B']], cov_tau_reg, n_draws)
 
                 samples_R = np.random.multivariate_normal(fits['popt_R'], cov_R_reg, n_draws)
+                # Stabilize the legacy parametric band the same way the S/tau
+                # draws are stabilized: freeze the unidentifiable knee location
+                # (x0) and sharpness (beta), and clip the slopes. The residual-
+                # scatter band below supersedes this when R_resid_var exists.
+                samples_R[:, 0] = fits['popt_R'][0]
+                samples_R[:, 4] = fits['popt_R'][4]
+                samples_R[:, 2] = np.clip(samples_R[:, 2], -2.0, 5.0)
+                samples_R[:, 3] = np.clip(samples_R[:, 3], -2.0, 5.0)
 
                 phot_samples, all_phot_mc = {}, {}
                 for band, params in fits.get('photometry', {}).items():
@@ -669,7 +747,7 @@ class SemiAnalyticalCoolTrack:
                     S_i = np.exp(ln_S_i)
                     all_S[i, :] = S_i
 
-                    ln_R_i = softplus_piecewise(ln_S_median, *samples_R[i])
+                    ln_R_i = softplus_piecewise(ln_R_axis, *samples_R[i])
                     all_R[i, :] = np.exp(ln_R_i)
 
                     if fits.get('method_tau') == 'softplus':
@@ -691,8 +769,24 @@ class SemiAnalyticalCoolTrack:
                 results['age_yr_upper'] = np.percentile(all_ages, 84, axis=0)
                 results['S_physical_lower'] = np.percentile(all_S, 16, axis=0)
                 results['S_physical_upper'] = np.percentile(all_S, 84, axis=0)
-                results['Req_Rj_lower'] = np.percentile(all_R, 16, axis=0)
-                results['Req_Rj_upper'] = np.percentile(all_R, 84, axis=0)
+
+                # Radius band: prefer the residual scatter of the R(T_int) fit.
+                # This is the honest "how well does the surrogate know R" width
+                # (a few percent), and is stable, unlike percentiles of curves
+                # drawn from the near-degenerate softplus parameter covariance.
+                R_resid_var = fits.get('R_resid_var', None)
+                if R_resid_var is not None:
+                    sigma_R = float(np.sqrt(np.clip(R_resid_var, 0.0, 0.01)))
+                    ln_R_med = np.log(results['Req_Rj'])
+                    R_band = np.exp(
+                        ln_R_med[None, :]
+                        + np.random.normal(0.0, sigma_R, size=(n_draws, n_points))
+                    )
+                    results['Req_Rj_lower'] = np.percentile(R_band, 16, axis=0)
+                    results['Req_Rj_upper'] = np.percentile(R_band, 84, axis=0)
+                else:
+                    results['Req_Rj_lower'] = np.percentile(all_R, 16, axis=0)
+                    results['Req_Rj_upper'] = np.percentile(all_R, 84, axis=0)
 
                 for band, params in fits.get('photometry', {}).items():
                     if params is None:
